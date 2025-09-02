@@ -155,7 +155,7 @@
     <script>
         // 拼图游戏主逻辑
         document.addEventListener('DOMContentLoaded', () => {
-            // 全局变量
+            // 全局变量 - 注意：图片文件夹为 "image"，配置文件为 "image.json"
             let IMAGE_CONFIG = [];  // 从配置文件加载的图片配置列表
             let selectedImageIndex = 0;  // 当前选中的图片索引
             
@@ -190,13 +190,12 @@
             // 初始化分享链接
             dom.shareLink.textContent = window.location.href;
             
-            // 第一步：加载图片配置文件（images.json）
+            // 第一步：加载图片配置文件（image.json）
             loadImageConfig();
             
-            // 加载图片配置文件
+            // 加载图片配置文件 - 注意：配置文件名为 "image.json"
             function loadImageConfig() {
-                // 从根目录加载images.json（和index.html同级）
-                fetch('images.json')
+                fetch('image.json')
                     .then(response => {
                         if (!response.ok) throw new Error('配置文件不存在');
                         return response.json();
@@ -245,7 +244,7 @@
                 }
             }
             
-            // 加载图片并切割成9块，autoShuffle是否默认打乱
+            // 加载图片并切割成9块 - 注意：图片文件夹为 "image"
             function loadAndCropImage(filename, autoShuffle = false) {
                 // 显示加载状态
                 dom.puzzleBoard.innerHTML = `
@@ -259,8 +258,8 @@
                 dom.resetBtn.disabled = true;
                 
                 const img = new Image();
-                // 图片路径：images文件夹下的文件（和配置文件一致）
-                img.src = `images/${filename}`;
+                // 图片路径：image文件夹下的文件（注意文件夹名为单数形式）
+                img.src = `image/${filename}`;
                 
                 // 图片加载错误处理（用默认图替代）
                 img.onerror = function() {
