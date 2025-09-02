@@ -34,14 +34,9 @@
                        cursor-pointer transition-all duration-200 shadow-md
                        hover:shadow-lg hover:scale-105 active:scale-95 
                        bg-cover bg-center rounded;
-                transition-property: transform, background-color;
-                transition-duration: 0.2s;
             }
             .tile-empty {
                 @apply bg-gray-200 cursor-default hover:shadow-md hover:scale-100;
-            }
-            .tile-moving {
-                @apply scale-110 shadow-xl;
             }
             .game-container {
                 @apply relative w-[90vw] h-[90vw] max-w-[500px] max-h-[500px] mx-auto;
@@ -69,35 +64,6 @@
             }
             .loading-state {
                 @apply flex items-center justify-center text-gray-500 gap-2 py-4;
-            }
-            /* 缩略图预览区域样式 - 优化移动端适配 */
-            .thumbnail-container {
-                @apply fixed top-1/4 -right-full md:-right-64 z-30 transition-all duration-300 ease-in-out;
-            }
-            .thumbnail-container.expanded {
-                @apply right-0;
-            }
-            .thumbnail-content {
-                @apply bg-white rounded-lg shadow-xl p-4 flex items-center;
-            }
-            .thumbnail-image {
-                @apply w-32 md:w-48 h-32 md:h-48 object-cover rounded border-2 border-gray-200;
-            }
-            .toggle-btn {
-                @apply absolute left-0 -translate-x-1/2 top-1/2 -translate-y-1/2 
-                       bg-primary text-white w-8 h-8 rounded-full flex items-center justify-center
-                       cursor-pointer shadow-md hover:bg-primary/90 transition-all;
-                /* 增加移动端点击区域 */
-                @apply md:touch-manipulation;
-            }
-            /* 移动设备上的触摸反馈样式 */
-            @media (max-width: 768px) {
-                .toggle-btn {
-                    @apply w-10 h-10;
-                }
-                .thumbnail-container {
-                    @apply top-20;
-                }
             }
         }
     </style>
@@ -139,9 +105,6 @@
                 </div>
             </div>
             <div class="flex gap-3">
-                <button id="shuffle-btn" class="btn-primary flex items-center gap-2" disabled>
-                    <i class="fa fa-random"></i> 重新打乱
-                </button>
                 <button id="reset-btn" class="btn-secondary flex items-center gap-2" disabled>
                     <i class="fa fa-refresh"></i> 重置
                 </button>
@@ -163,18 +126,7 @@
                 <div class="text-center">
                     <h2 class="text-4xl font-bold text-yellow-400 mb-2">恭喜你赢了！</h2>
                     <p class="text-white text-xl mb-4">你用了 <span id="final-moves" class="text-accent font-bold">0</span> 步，花了 <span id="final-time" class="text-primary font-bold">00:00</span></p>
-                    <button id="play-again-btn" class="btn-primary mt-4">再玩一次</button>
                 </div>
-            </div>
-        </div>
-        
-        <!-- 图片缩略图预览区（悬浮、可展开收起） -->
-        <div id="thumbnail-container" class="thumbnail-container">
-            <div class="thumbnail-content">
-                <div id="toggle-thumbnail" class="toggle-btn">
-                    <i class="fa fa-chevron-left"></i>
-                </div>
-                <img id="thumbnail-image" src="" alt="选中图片缩略图" class="thumbnail-image">
             </div>
         </div>
         
@@ -185,10 +137,14 @@
                 <li>首先从上方选择一张图片</li>
                 <li>点击空白格周围的拼图块来移动它们</li>
                 <li>将所有拼图块恢复到正确位置即可获胜</li>
-                <li>右侧可展开查看完整图片缩略图</li>
-                <li>使用"重新打乱"按钮重新开始新的一局</li>
                 <li>使用"重置"按钮恢复到初始打乱状态</li>
             </ul>
+        </div>
+        
+        <!-- 选中图片固定显示区 -->
+        <div class="mt-6 bg-white rounded-lg p-6 shadow-md">
+            <h2 class="text-xl font-bold text-primary mb-3">参考图片</h2>
+            <img id="thumbnail-image" src="" alt="选中图片" class="thumbnail-image mx-auto">
         </div>
         
         <!-- 页脚 -->
@@ -222,65 +178,21 @@
                 puzzleBoard: document.getElementById('puzzle-board'),
                 movesDisplay: document.getElementById('moves'),
                 timeDisplay: document.getElementById('time'),
-                shuffleBtn: document.getElementById('shuffle-btn'),
                 resetBtn: document.getElementById('reset-btn'),
                 winMessage: document.getElementById('win-message'),
                 finalMoves: document.getElementById('final-moves'),
                 finalTime: document.getElementById('final-time'),
-                playAgainBtn: document.getElementById('play-again-btn'),
                 shareLink: document.getElementById('share-link'),
                 imageSelector: document.getElementById('image-selector'),
                 loadError: document.getElementById('load-error'),
-                thumbnailContainer: document.getElementById('thumbnail-container'),
-                thumbnailImage: document.getElementById('thumbnail-image'),
-                toggleThumbnail: document.getElementById('toggle-thumbnail')
+                thumbnailImage: document.getElementById('thumbnail-image')
             };
             
             // 初始化分享链接
             dom.shareLink.textContent = window.location.href;
             
-            // 初始化缩略图切换功能（支持触摸和点击）
-            function setupThumbnailToggle() {
-                // 点击事件
-                dom.toggleThumbnail.addEventListener('click', toggleThumbnail);
-                
-                // 触摸事件 - 移动端支持
-                dom.toggleThumbnail.addEventListener('touchstart', (e) => {
-                    e.preventDefault(); // 防止点击事件同时触发
-                    toggleThumbnail();
-                }, { passive: false });
-                
-                // 屏幕尺寸变化时自动调整
-                window.addEventListener('resize', () => {
-                    if (window.innerWidth <= 768) {
-                        // 移动端默认收起
-                        dom.thumbnailContainer.classList.remove('expanded');
-                        updateThumbnailIcon();
-                    }
-                });
-            }
-            
-            // 切换缩略图显示状态
-            function toggleThumbnail() {
-                dom.thumbnailContainer.classList.toggle('expanded');
-                updateThumbnailIcon();
-            }
-            
-            // 更新缩略图按钮图标
-            function updateThumbnailIcon() {
-                const icon = dom.toggleThumbnail.querySelector('i');
-                if (dom.thumbnailContainer.classList.contains('expanded')) {
-                    icon.classList.remove('fa-chevron-left');
-                    icon.classList.add('fa-chevron-right');
-                } else {
-                    icon.classList.remove('fa-chevron-right');
-                    icon.classList.add('fa-chevron-left');
-                }
-            }
-            
             // 第一步：加载图片配置文件（image.json）
             loadImageConfig();
-            setupThumbnailToggle();
             
             // 加载图片配置文件
             function loadImageConfig() {
@@ -344,14 +256,13 @@
                     </div>
                 `;
                 // 禁用按钮
-                dom.shuffleBtn.disabled = true;
                 dom.resetBtn.disabled = true;
                 
                 // 更新当前图片路径（支持PNG和含-的文件名）
                 state.currentImage = `image/${filename}`;
                 // 更新缩略图
                 dom.thumbnailImage.src = state.currentImage;
-                dom.thumbnailImage.alt = `缩略图：${IMAGE_CONFIG[selectedImageIndex].name}`;
+                dom.thumbnailImage.alt = `参考图：${IMAGE_CONFIG[selectedImageIndex].name}`;
                 
                 const img = new Image();
                 img.src = state.currentImage;
@@ -408,7 +319,6 @@
                     
                     // 初始化游戏并启用按钮
                     initializeBoard();
-                    dom.shuffleBtn.disabled = false;
                     dom.resetBtn.disabled = false;
                     
                     // 如果需要默认打乱，加载完成后自动打乱
@@ -436,7 +346,7 @@
                 dom.winMessage.classList.add('hidden');
             }
             
-            // 初始化拼图棋盘 - 确保9个块完整
+            // 初始化拼图棋盘
             function initializeBoard() {
                 // 创建完成状态（0-8表示9个图片块，最后一个为空白）
                 state.solvedBoard = [];
@@ -453,9 +363,6 @@
                 
                 // 复制完成状态作为初始状态
                 state.board = JSON.parse(JSON.stringify(state.solvedBoard));
-                
-                // 确保空白块位置正确
-                state.emptyTile = {x: 2, y: 2};
                 
                 // 渲染拼图
                 renderBoard();
@@ -477,11 +384,6 @@
                         if (tileValue !== null && state.imagePieces[tileValue]) {
                             tile.style.backgroundImage = `url(${state.imagePieces[tileValue]})`;
                             tile.addEventListener('click', () => moveTile(x, y));
-                            // 添加触摸事件支持
-                            tile.addEventListener('touchstart', (e) => {
-                                e.preventDefault();
-                                moveTile(x, y);
-                            }, { passive: false });
                         } 
                         // 空白块：灰色背景
                         else {
@@ -493,7 +395,7 @@
                 }
             }
             
-            // 移动拼图块 - 添加动画和触觉反馈
+            // 移动拼图块
             function moveTile(x, y) {
                 // 检查是否能移动（必须和空白块相邻）
                 const isAdjacent = 
@@ -501,17 +403,6 @@
                     (Math.abs(y - state.emptyTile.y) === 1 && x === state.emptyTile.x);
                 
                 if (!isAdjacent) return;
-                
-                // 获取当前方块元素，添加移动动画
-                const tileElement = dom.puzzleBoard.querySelector(`[data-x="${x}"][data-y="${y}"]`);
-                if (tileElement) {
-                    tileElement.classList.add('tile-moving');
-                }
-                
-                // 触觉反馈 - 支持的浏览器会触发振动
-                if ("vibrate" in navigator) {
-                    navigator.vibrate(50); // 振动50毫秒
-                }
                 
                 // 第一次移动时开始计时
                 if (!state.startTime) {
@@ -530,16 +421,14 @@
                 state.moves++;
                 dom.movesDisplay.textContent = state.moves;
                 
-                // 延迟移除动画类以确保动画效果可见
-                setTimeout(() => {
-                    renderBoard();
-                }, 200);
+                // 重新渲染
+                renderBoard();
                 
                 // 检查是否完成
                 checkWin();
             }
             
-            // 打乱拼图（修复只有7格的问题）
+            // 打乱拼图
             function shuffleBoard() {
                 // 保存当前图片
                 const currentImagePieces = [...state.imagePieces];
@@ -641,22 +530,15 @@
                     const seconds = (state.seconds % 60).toString().padStart(2, '0');
                     dom.finalTime.textContent = `${minutes}:${seconds}`;
                     dom.winMessage.classList.remove('hidden');
-                    
-                    // 胜利振动反馈
-                    if ("vibrate" in navigator) {
-                        navigator.vibrate([100, 50, 100]); // 振动模式
-                    }
                 }
             }
             
             // 绑定按钮事件
-            dom.shuffleBtn.addEventListener('click', shuffleBoard);
             dom.resetBtn.addEventListener('click', () => {
                 resetGameState();
                 initializeBoard();
                 shuffleBoard();
             });
-            dom.playAgainBtn.addEventListener('click', shuffleBoard);
         });
     </script>
 </body>
