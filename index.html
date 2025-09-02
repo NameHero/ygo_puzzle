@@ -72,6 +72,21 @@
             .thumbnail-image {
                 @apply max-w-full h-auto rounded-lg border-2 border-gray-200;
             }
+            .record-item {
+                @apply flex justify-between items-center p-2 border-b border-gray-100 last:border-0;
+            }
+            .record-rank {
+                @apply w-8 h-8 flex items-center justify-center rounded-full font-bold mr-2;
+            }
+            .rank-1 {
+                @apply bg-yellow-100 text-yellow-600;
+            }
+            .rank-2 {
+                @apply bg-gray-100 text-gray-600;
+            }
+            .rank-3 {
+                @apply bg-orange-100 text-orange-600;
+            }
         }
     </style>
 </head>
@@ -136,6 +151,7 @@
                 <div class="text-center">
                     <h2 class="text-4xl font-bold text-yellow-400 mb-2">恭喜你赢了！</h2>
                     <p class="text-white text-xl mb-4">你用了 <span id="final-moves" class="text-accent font-bold">0</span> 步，花了 <span id="final-time" class="text-primary font-bold">00:00</span></p>
+                    <button id="close-win-btn" class="btn-primary mt-4">关闭</button>
                 </div>
             </div>
         </div>
@@ -155,6 +171,19 @@
         <div class="mt-6 bg-white rounded-lg p-6 shadow-md">
             <h2 class="text-xl font-bold text-primary mb-3">参考图片</h2>
             <img id="thumbnail-image" src="" alt="选中图片" class="thumbnail-image mx-auto">
+            
+            <!-- 我的记录模块 -->
+            <div class="mt-6">
+                <h3 class="text-lg font-bold text-primary mb-3 flex items-center">
+                    <i class="fa fa-trophy mr-2 text-accent"></i> 我的记录
+                </h3>
+                <div id="no-records" class="text-center text-gray-500 py-4">
+                    暂无记录，快来创造第一个记录吧！
+                </div>
+                <div id="records-container" class="hidden space-y-1 max-h-60 overflow-y-auto">
+                    <!-- 记录将通过JS动态添加 -->
+                </div>
+            </div>
         </div>
         
         <!-- 页脚 -->
@@ -181,7 +210,8 @@
                 timer: null,        // 计时器
                 seconds: 0,         // 已用秒数
                 imagePieces: [],    // 切割后的图片块数据
-                currentImage: ''    // 当前选中的图片路径
+                currentImage: '',   // 当前选中的图片路径
+                currentImageName: ''// 当前选中的图片名称
             };
             
             // DOM元素
@@ -194,12 +224,15 @@
                 winMessage: document.getElementById('win-message'),
                 finalMoves: document.getElementById('final-moves'),
                 finalTime: document.getElementById('final-time'),
+                closeWinBtn: document.getElementById('close-win-btn'),
                 shareLink: document.getElementById('share-link'),
                 imageSelector: document.getElementById('image-selector'),
                 imageSelectorContainer: document.getElementById('image-selector-container'),
                 loadError: document.getElementById('load-error'),
                 thumbnailImage: document.getElementById('thumbnail-image'),
-                gameTitle: document.getElementById('game-title')
+                gameTitle: document.getElementById('game-title'),
+                noRecords: document.getElementById('no-records'),
+                recordsContainer: document.getElementById('records-container')
             };
             
             // 初始化分享链接
@@ -218,10 +251,9 @@
                 
                 if (exclusiveImage) {
                     isExclusiveMode = true;
-                    // 隐藏图片选择区
+                    // 隐藏图片选择区和专享按钮
                     dom.imageSelectorContainer.classList.add('hidden');
-                    // 禁用专享按钮
-                    dom.exclusiveBtn.disabled = true;
+                    dom.exclusiveBtn.classList.add('hidden');
                 }
             }
             
@@ -255,10 +287,16 @@
                                 if (index !== -1) {
                                     selectedImageIndex = index;
                                     loadAndCropImage(IMAGE_CONFIG[selectedImageIndex].file);
+                                    state.currentImageName = exclusiveImage;
+                                    // 显示记录
+                                    displayRecords(exclusiveImage);
                                 }
                             } else {
                                 // 如果专享图片不存在，加载第一张图片
                                 loadAndCropImage(IMAGE_CONFIG[0].file);
+                                state.currentImageName = IMAGE_CONFIG[0].name;
+                                // 显示记录
+                                displayRecords(IMAGE_CONFIG[0].name);
                             }
                         }
                     })
@@ -288,6 +326,9 @@
                         selectedImageIndex = index;
                         // 切换图片时重置状态
                         loadAndCropImage(image.file);
+                        state.currentImageName = image.name;
+                        // 显示记录
+                        displayRecords(image.name);
                     });
                     
                     dom.imageSelector.appendChild(option);
@@ -296,6 +337,9 @@
                 // 非专享模式下，加载默认图片（第一张）
                 if (!isExclusiveMode && IMAGE_CONFIG.length > 0) {
                     loadAndCropImage(IMAGE_CONFIG[selectedImageIndex].file);
+                    state.currentImageName = IMAGE_CONFIG[selectedImageIndex].name;
+                    // 显示记录
+                    displayRecords(IMAGE_CONFIG[selectedImageIndex].name);
                 }
             }
             
@@ -310,13 +354,15 @@
                 `;
                 // 禁用按钮
                 dom.resetBtn.disabled = true;
-                dom.exclusiveBtn.disabled = true;
+                if (!isExclusiveMode) {
+                    dom.exclusiveBtn.disabled = true;
+                }
                 
                 // 更新当前图片路径（支持PNG和含-的文件名）
                 state.currentImage = `image/${filename}`;
                 // 更新缩略图
                 dom.thumbnailImage.src = state.currentImage;
-                dom.thumbnailImage.alt = `参考图：${IMAGE_CONFIG[selectedImageIndex].name}`;
+                dom.thumbnailImage.alt = `参考图：${state.currentImageName}`;
                 
                 const img = new Image();
                 img.src = state.currentImage;
@@ -419,58 +465,68 @@
                 // 确保空白块位置正确
                 state.emptyTile = {x: 2, y: 2};
                 
-                // 打乱拼图（使用固定的打乱模式，确保始终有8个可见块）
-                applyInitialShuffle();
+                // 随机打乱拼图（确保有效）
+                randomShuffle();
                 
                 // 渲染拼图
                 renderBoard();
             }
             
-            // 应用初始打乱（固定模式，确保有效性）
-            function applyInitialShuffle() {
-                // 使用预设的有效打乱模式，避免随机打乱可能出现的问题
-                // 这是一个已知有效的打乱序列
-                const moves = [
-                    {x: 1, y: 2},  // 向右移动(1,2)到(2,2)
-                    {x: 2, y: 1},  // 向下移动(2,1)到(2,2)
-                    {x: 1, y: 1},  // 向右移动(1,1)到(2,1)
-                    {x: 0, y: 1},  // 向右移动(0,1)到(1,1)
-                    {x: 0, y: 2},  // 向上移动(0,2)到(0,1)
-                    {x: 1, y: 2},  // 向左移动(1,2)到(0,2)
-                    {x: 2, y: 2},  // 向左移动(2,2)到(1,2)
-                    {x: 2, y: 1},  // 向下移动(2,1)到(2,2)
-                    {x: 2, y: 0},  // 向下移动(2,0)到(2,1)
-                    {x: 1, y: 0},  // 向右移动(1,0)到(2,0)
-                    {x: 0, y: 0},  // 向右移动(0,0)到(1,0)
-                    {x: 0, y: 1},  // 向上移动(0,1)到(0,0)
-                    {x: 0, y: 2},  // 向上移动(0,2)到(0,1)
-                    {x: 1, y: 2},  // 向左移动(1,2)到(0,2)
-                    {x: 1, y: 1},  // 向下移动(1,1)到(1,2)
-                    {x: 1, y: 0},  // 向下移动(1,0)到(1,1)
-                    {x: 2, y: 0},  // 向左移动(2,0)到(1,0)
-                    {x: 2, y: 1},  // 向上移动(2,1)到(2,0)
-                    {x: 2, y: 2},  // 向上移动(2,2)到(2,1)
-                    {x: 1, y: 2}   // 向右移动(1,2)到(2,2)
-                ];
+            // 随机打乱拼图（确保生成有效可解的打乱序列）
+            function randomShuffle() {
+                // 随机生成移动次数（60-100次）
+                const moveCount = 60 + Math.floor(Math.random() * 41);
+                let movesMade = 0;
                 
-                // 执行打乱步骤
-                moves.forEach(move => {
-                    const {x, y} = move;
-                    // 检查是否能移动（必须和空白块相邻）
-                    const isAdjacent = 
-                        (Math.abs(x - state.emptyTile.x) === 1 && y === state.emptyTile.y) ||
-                        (Math.abs(y - state.emptyTile.y) === 1 && x === state.emptyTile.x);
+                // 执行随机移动
+                while (movesMade < moveCount) {
+                    const directions = [];
                     
-                    if (isAdjacent) {
-                        // 交换当前块和空白块
-                        state.board[state.emptyTile.y][state.emptyTile.x] = state.board[y][x];
-                        state.board[y][x] = null;
+                    // 上
+                    if (state.emptyTile.y > 0) directions.push('up');
+                    // 下
+                    if (state.emptyTile.y < 2) directions.push('down');
+                    // 左
+                    if (state.emptyTile.x > 0) directions.push('left');
+                    // 右
+                    if (state.emptyTile.x < 2) directions.push('right');
+                    
+                    // 随机选择一个方向
+                    if (directions.length > 0) {
+                        const direction = directions[Math.floor(Math.random() * directions.length)];
                         
-                        // 更新空白块位置
-                        state.emptyTile.x = x;
-                        state.emptyTile.y = y;
+                        switch (direction) {
+                            case 'up':
+                                // 从上方移动块到空白处
+                                state.board[state.emptyTile.y][state.emptyTile.x] = state.board[state.emptyTile.y - 1][state.emptyTile.x];
+                                state.board[state.emptyTile.y - 1][state.emptyTile.x] = null;
+                                state.emptyTile.y--;
+                                movesMade++;
+                                break;
+                            case 'down':
+                                // 从下方移动块到空白处
+                                state.board[state.emptyTile.y][state.emptyTile.x] = state.board[state.emptyTile.y + 1][state.emptyTile.x];
+                                state.board[state.emptyTile.y + 1][state.emptyTile.x] = null;
+                                state.emptyTile.y++;
+                                movesMade++;
+                                break;
+                            case 'left':
+                                // 从左方移动块到空白处
+                                state.board[state.emptyTile.y][state.emptyTile.x] = state.board[state.emptyTile.y][state.emptyTile.x - 1];
+                                state.board[state.emptyTile.y][state.emptyTile.x - 1] = null;
+                                state.emptyTile.x--;
+                                movesMade++;
+                                break;
+                            case 'right':
+                                // 从右方移动块到空白处
+                                state.board[state.emptyTile.y][state.emptyTile.x] = state.board[state.emptyTile.y][state.emptyTile.x + 1];
+                                state.board[state.emptyTile.y][state.emptyTile.x + 1] = null;
+                                state.emptyTile.x++;
+                                movesMade++;
+                                break;
+                        }
                     }
-                });
+                }
             }
             
             // 渲染拼图到页面
@@ -556,6 +612,105 @@
                     const seconds = (state.seconds % 60).toString().padStart(2, '0');
                     dom.finalTime.textContent = `${minutes}:${seconds}`;
                     dom.winMessage.classList.remove('hidden');
+                    
+                    // 保存记录
+                    saveRecord(state.currentImageName, state.moves, state.seconds);
+                    
+                    // 刷新记录显示
+                    displayRecords(state.currentImageName);
+                }
+            }
+            
+            // 保存记录到本地存储
+            function saveRecord(imageName, moves, seconds) {
+                try {
+                    // 获取现有记录
+                    let allRecords = JSON.parse(localStorage.getItem('puzzleRecords') || '{}');
+                    
+                    // 如果该图片没有记录，创建一个空数组
+                    if (!allRecords[imageName]) {
+                        allRecords[imageName] = [];
+                    }
+                    
+                    // 添加新记录
+                    allRecords[imageName].push({
+                        moves: moves,
+                        time: seconds,
+                        date: new Date().toISOString()
+                    });
+                    
+                    // 保存回本地存储
+                    localStorage.setItem('puzzleRecords', JSON.stringify(allRecords));
+                } catch (error) {
+                    console.error('保存记录失败:', error);
+                }
+            }
+            
+            // 显示指定图片的记录
+            function displayRecords(imageName) {
+                try {
+                    // 获取现有记录
+                    let allRecords = JSON.parse(localStorage.getItem('puzzleRecords') || '{}');
+                    let records = allRecords[imageName] || [];
+                    
+                    // 按时间排序（升序），时间相同则按步数排序
+                    records.sort((a, b) => {
+                        if (a.time !== b.time) {
+                            return a.time - b.time;
+                        }
+                        return a.moves - b.moves;
+                    });
+                    
+                    // 显示或隐藏无记录提示
+                    if (records.length === 0) {
+                        dom.noRecords.classList.remove('hidden');
+                        dom.recordsContainer.classList.add('hidden');
+                        return;
+                    }
+                    
+                    // 隐藏无记录提示，显示记录容器
+                    dom.noRecords.classList.add('hidden');
+                    dom.recordsContainer.classList.remove('hidden');
+                    dom.recordsContainer.innerHTML = '';
+                    
+                    // 显示前10条记录
+                    const displayCount = Math.min(10, records.length);
+                    for (let i = 0; i < displayCount; i++) {
+                        const record = records[i];
+                        const recordElement = document.createElement('div');
+                        recordElement.className = 'record-item';
+                        
+                        // 格式化日期
+                        const date = new Date(record.date);
+                        const formattedDate = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+                        
+                        // 格式化时间
+                        const minutes = Math.floor(record.time / 60).toString().padStart(2, '0');
+                        const seconds = (record.time % 60).toString().padStart(2, '0');
+                        
+                        // 排名样式（前三名有特殊样式）
+                        let rankClass = '';
+                        if (i === 0) rankClass = 'rank-1';
+                        else if (i === 1) rankClass = 'rank-2';
+                        else if (i === 2) rankClass = 'rank-3';
+                        
+                        recordElement.innerHTML = `
+                            <div class="flex items-center">
+                                <div class="record-rank ${rankClass}">${i + 1}</div>
+                                <span class="text-gray-600">${formattedDate}</span>
+                            </div>
+                            <div class="flex gap-6">
+                                <span><i class="fa fa-move text-accent mr-1"></i> ${record.moves} 步</span>
+                                <span><i class="fa fa-clock-o text-primary mr-1"></i> ${minutes}:${seconds}</span>
+                            </div>
+                        `;
+                        
+                        dom.recordsContainer.appendChild(recordElement);
+                    }
+                } catch (error) {
+                    console.error('显示记录失败:', error);
+                    dom.noRecords.classList.remove('hidden');
+                    dom.recordsContainer.classList.add('hidden');
                 }
             }
             
@@ -570,6 +725,11 @@
                 const currentImageName = IMAGE_CONFIG[selectedImageIndex].name;
                 // 跳转到专享页面
                 window.location.href = `${window.location.origin}${window.location.pathname}?exclusive=${encodeURIComponent(currentImageName)}`;
+            });
+            
+            // 关闭胜利提示
+            dom.closeWinBtn.addEventListener('click', () => {
+                dom.winMessage.classList.add('hidden');
             });
         });
     </script>
