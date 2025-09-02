@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3x3拼图游戏</title>
+    <title>3x3图片拼图游戏</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
     
@@ -30,9 +30,10 @@
     <style type="text/tailwindcss">
         @layer utilities {
             .puzzle-tile {
-                @apply w-full h-full flex items-center justify-center text-2xl md:text-4xl font-bold 
+                @apply w-full h-full flex items-center justify-center 
                        cursor-pointer transition-all duration-200 shadow-md
-                       hover:shadow-lg hover:scale-105 active:scale-95;
+                       hover:shadow-lg hover:scale-105 active:scale-95 
+                       bg-cover bg-center rounded;
             }
             .tile-empty {
                 @apply bg-gray-200 cursor-default hover:shadow-md hover:scale-100;
@@ -51,6 +52,16 @@
                 @apply bg-secondary hover:bg-secondary/90 text-white font-bold py-2 px-4 rounded-lg 
                        transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-1;
             }
+            .image-selector {
+                @apply flex flex-wrap gap-2 my-4;
+            }
+            .image-option {
+                @apply px-4 py-2 border rounded-lg cursor-pointer transition-all duration-200 
+                       hover:bg-primary/10 hover:border-primary;
+            }
+            .image-option.selected {
+                @apply bg-primary text-white border-primary;
+            }
         }
     </style>
 </head>
@@ -58,9 +69,20 @@
     <div class="container mx-auto px-4 py-8 max-w-4xl">
         <!-- 游戏标题 -->
         <header class="text-center mb-8">
-            <h1 class="text-[clamp(2rem,5vw,3rem)] font-bold text-primary mb-2">3x3拼图游戏</h1>
-            <p class="text-gray-600 text-lg">将拼图块移动到正确位置，完成图片！</p>
+            <h1 class="text-[clamp(2rem,5vw,3rem)] font-bold text-primary mb-2">3x3图片拼图游戏</h1>
+            <p class="text-gray-600 text-lg">选择一张图片，将打乱的拼图块恢复原状！</p>
         </header>
+        
+        <!-- 图片选择区 -->
+        <div class="bg-white rounded-lg p-4 shadow-md mb-6">
+            <h2 class="text-xl font-bold text-primary mb-3">选择图片</h2>
+            <div id="image-selector" class="image-selector">
+                <!-- 图片选项将通过JavaScript动态生成 -->
+                <div class="flex items-center justify-center text-gray-500">
+                    <i class="fa fa-spinner fa-spin text-2xl"></i>
+                </div>
+            </div>
+        </div>
         
         <!-- 游戏信息和控制区 -->
         <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
@@ -102,6 +124,7 @@
         <div class="mt-10 bg-white rounded-lg p-6 shadow-md">
             <h2 class="text-xl font-bold text-primary mb-3">游戏说明</h2>
             <ul class="list-disc list-inside space-y-2 text-gray-700">
+                <li>首先从上方选择一张图片</li>
                 <li>点击空白格周围的拼图块来移动它们</li>
                 <li>将所有拼图块恢复到正确位置即可获胜</li>
                 <li>使用"打乱"按钮重新开始新的一局</li>
@@ -118,15 +141,30 @@
     <script>
         // 拼图游戏主逻辑
         document.addEventListener('DOMContentLoaded', () => {
+            // 游戏配置 - 在这里添加你的图片文件名
+            // 请将所有图片放在images文件夹中
+            const IMAGE_FILES = [
+                "image1.jpg",
+                "image2.jpg",
+                "image3.jpg",
+                "image4.jpg",
+                "image5.jpg"
+                // 可以继续添加更多图片
+            ];
+            
+            // 当前选中的图片索引
+            let selectedImageIndex = 0;
+            
             // 游戏状态变量
             const state = {
-                board: [],          // 拼图当前状态
+                board: [],          // 拼图当前状态 (存储的是每个位置应该显示的图片块索引)
                 solvedBoard: [],    // 拼图完成状态
                 emptyTile: {x: 2, y: 2}, // 空白块位置
                 moves: 0,           // 移动次数
                 startTime: null,    // 游戏开始时间
                 timer: null,        // 计时器
-                seconds: 0          // 已用秒数
+                seconds: 0,         // 已用秒数
+                imagePieces: []     // 存储切割后的图片块数据
             };
             
             // DOM元素
@@ -140,15 +178,106 @@
             const finalTime = document.getElementById('final-time');
             const playAgainBtn = document.getElementById('play-again-btn');
             const shareLink = document.getElementById('share-link');
+            const imageSelector = document.getElementById('image-selector');
             
             // 初始化分享链接
             shareLink.textContent = window.location.href;
             
+            // 初始化图片选择器 - 只显示图片名称
+            function initializeImageSelector() {
+                imageSelector.innerHTML = '';
+                
+                IMAGE_FILES.forEach((filename, index) => {
+                    // 提取文件名（不含扩展名）作为显示名称
+                    const displayName = filename.split('.').slice(0, -1).join('.') || filename;
+                    
+                    const option = document.createElement('div');
+                    option.className = `image-option ${index === selectedImageIndex ? 'selected' : ''}`;
+                    option.textContent = displayName;
+                    
+                    // 点击选择图片
+                    option.addEventListener('click', () => {
+                        // 更新选中状态
+                        document.querySelectorAll('.image-option').forEach(el => {
+                            el.classList.remove('selected');
+                        });
+                        option.classList.add('selected');
+                        selectedImageIndex = index;
+                        
+                        // 加载并切割新图片
+                        loadAndCropImage(filename);
+                    });
+                    
+                    imageSelector.appendChild(option);
+                });
+                
+                // 加载默认图片
+                if (IMAGE_FILES.length > 0) {
+                    loadAndCropImage(IMAGE_FILES[selectedImageIndex]);
+                }
+            }
+            
+            // 加载图片并切割成9块
+            function loadAndCropImage(filename) {
+                const img = new Image();
+                img.src = `images/${filename}`;
+                
+                // 图片加载错误处理
+                img.onerror = function() {
+                    this.src = `https://picsum.photos/seed/${filename}/400/400`;
+                };
+                
+                img.onload = function() {
+                    // 创建canvas用于切割图片
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // 确保图片是正方形，取最小边
+                    const size = Math.min(img.width, img.height);
+                    canvas.width = size;
+                    canvas.height = size;
+                    
+                    // 绘制图片（居中裁剪成正方形）
+                    const xOffset = (img.width - size) / 2;
+                    const yOffset = (img.height - size) / 2;
+                    ctx.drawImage(img, xOffset, yOffset, size, size, 0, 0, size, size);
+                    
+                    // 切割成3x3的块
+                    const pieceSize = size / 3;
+                    state.imagePieces = [];
+                    
+                    for (let y = 0; y < 3; y++) {
+                        for (let x = 0; x < 3; x++) {
+                            // 创建一个新的canvas用于每个小块
+                            const pieceCanvas = document.createElement('canvas');
+                            pieceCanvas.width = pieceSize;
+                            pieceCanvas.height = pieceSize;
+                            const pieceCtx = pieceCanvas.getContext('2d');
+                            
+                            // 从原始图片上裁剪对应的部分
+                            pieceCtx.drawImage(
+                                canvas,
+                                x * pieceSize, y * pieceSize,  // 源图片上的位置
+                                pieceSize, pieceSize,          // 裁剪大小
+                                0, 0,                          // 目标canvas上的位置
+                                pieceSize, pieceSize           // 目标大小
+                            );
+                            
+                            // 将裁剪的小块保存为dataURL
+                            state.imagePieces.push(pieceCanvas.toDataURL());
+                        }
+                    }
+                    
+                    // 初始化游戏板
+                    initializeBoard();
+                };
+            }
+            
             // 初始化拼图
             function initializeBoard() {
-                // 创建完成状态的拼图
+                // 创建完成状态的拼图 (0-8的数字代表9个图片块，最后一个位置为null表示空白)
                 state.solvedBoard = [];
-                let num = 1;
+                let num = 0;
                 for (let y = 0; y < 3; y++) {
                     const row = [];
                     for (let x = 0; x < 3; x++) {
@@ -194,12 +323,9 @@
                         tile.dataset.y = y;
                         tile.className = 'puzzle-tile rounded';
                         
-                        // 设置不同数字的背景颜色
-                        if (tileValue) {
-                            const hue = (tileValue * 40) % 360;
-                            tile.style.backgroundColor = `hsl(${hue}, 70%, 60%)`;
-                            tile.style.color = 'white';
-                            tile.textContent = tileValue;
+                        // 如果是有效图片块，设置背景图片
+                        if (tileValue !== null && state.imagePieces[tileValue]) {
+                            tile.style.backgroundImage = `url(${state.imagePieces[tileValue]})`;
                             
                             // 添加点击事件
                             tile.addEventListener('click', () => moveTile(x, y));
@@ -248,8 +374,14 @@
             
             // 打乱拼图
             function shuffleBoard() {
-                // 重置游戏状态
+                // 保存当前图片状态
+                const currentImagePieces = [...state.imagePieces];
+                
+                // 重新初始化（保持当前图片）
                 initializeBoard();
+                
+                // 恢复图片
+                state.imagePieces = currentImagePieces;
                 
                 // 随机移动100次来打乱拼图
                 let moves = 0;
@@ -341,8 +473,8 @@
             resetBtn.addEventListener('click', initializeBoard);
             playAgainBtn.addEventListener('click', shuffleBoard);
             
-            // 初始化游戏
-            initializeBoard();
+            // 初始化图片选择器和游戏
+            initializeImageSelector();
         });
     </script>
 </body>
