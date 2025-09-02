@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3x3拼图游戏</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    
+    <!-- 配置Tailwind自定义颜色和字体 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4F46E5',
+                        secondary: '#10B981',
+                        accent: '#F59E0B',
+                        dark: '#1F2937',
+                        light: '#F3F4F6'
+                    },
+                    fontFamily: {
+                        game: ['"Comic Sans MS"', '"Marker Felt"', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .puzzle-tile {
+                @apply w-full h-full flex items-center justify-center text-2xl md:text-4xl font-bold 
+                       cursor-pointer transition-all duration-200 shadow-md
+                       hover:shadow-lg hover:scale-105 active:scale-95;
+            }
+            .tile-empty {
+                @apply bg-gray-200 cursor-default hover:shadow-md hover:scale-100;
+            }
+            .game-container {
+                @apply relative w-[90vw] h-[90vw] max-w-[500px] max-h-[500px] mx-auto;
+            }
+            .puzzle-board {
+                @apply grid grid-cols-3 grid-rows-3 gap-2 w-full h-full bg-dark p-2 rounded-lg;
+            }
+            .btn-primary {
+                @apply bg-primary hover:bg-primary/90 text-white font-bold py-2 px-4 rounded-lg 
+                       transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-1;
+            }
+            .btn-secondary {
+                @apply bg-secondary hover:bg-secondary/90 text-white font-bold py-2 px-4 rounded-lg 
+                       transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-1;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-light to-gray-200 min-h-screen font-game text-dark">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <!-- 游戏标题 -->
+        <header class="text-center mb-8">
+            <h1 class="text-[clamp(2rem,5vw,3rem)] font-bold text-primary mb-2">3x3拼图游戏</h1>
+            <p class="text-gray-600 text-lg">将拼图块移动到正确位置，完成图片！</p>
+        </header>
+        
+        <!-- 游戏信息和控制区 -->
+        <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+            <div class="flex gap-6">
+                <div class="bg-white rounded-lg p-3 shadow-md">
+                    <p class="text-gray-500 text-sm">步数</p>
+                    <p id="moves" class="text-2xl font-bold text-accent">0</p>
+                </div>
+                <div class="bg-white rounded-lg p-3 shadow-md">
+                    <p class="text-gray-500 text-sm">时间</p>
+                    <p id="time" class="text-2xl font-bold text-primary">00:00</p>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <button id="shuffle-btn" class="btn-primary flex items-center gap-2">
+                    <i class="fa fa-random"></i> 打乱
+                </button>
+                <button id="reset-btn" class="btn-secondary flex items-center gap-2">
+                    <i class="fa fa-refresh"></i> 重置
+                </button>
+            </div>
+        </div>
+        
+        <!-- 游戏区域 -->
+        <div class="game-container">
+            <div id="puzzle-board" class="puzzle-board"></div>
+            
+            <!-- 胜利提示 (默认隐藏) -->
+            <div id="win-message" class="hidden absolute inset-0 bg-dark/80 rounded-lg flex flex-col items-center justify-center gap-6">
+                <div class="text-center">
+                    <h2 class="text-4xl font-bold text-yellow-400 mb-2">恭喜你赢了！</h2>
+                    <p class="text-white text-xl mb-4">你用了 <span id="final-moves" class="text-accent font-bold">0</span> 步，花了 <span id="final-time" class="text-primary font-bold">00:00</span></p>
+                    <button id="play-again-btn" class="btn-primary mt-4">再玩一次</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 游戏说明 -->
+        <div class="mt-10 bg-white rounded-lg p-6 shadow-md">
+            <h2 class="text-xl font-bold text-primary mb-3">游戏说明</h2>
+            <ul class="list-disc list-inside space-y-2 text-gray-700">
+                <li>点击空白格周围的拼图块来移动它们</li>
+                <li>将所有拼图块恢复到正确位置即可获胜</li>
+                <li>使用"打乱"按钮重新开始新的一局</li>
+                <li>使用"重置"按钮恢复到初始打乱状态</li>
+            </ul>
+        </div>
+        
+        <!-- 页脚 -->
+        <footer class="mt-12 text-center text-gray-500 text-sm">
+            <p>分享此链接给朋友一起玩：<span id="share-link" class="font-mono bg-gray-100 px-2 py-1 rounded"></span></p>
+        </footer>
+    </div>
+
+    <script>
+        // 拼图游戏主逻辑
+        document.addEventListener('DOMContentLoaded', () => {
+            // 游戏状态变量
+            const state = {
+                board: [],          // 拼图当前状态
+                solvedBoard: [],    // 拼图完成状态
+                emptyTile: {x: 2, y: 2}, // 空白块位置
+                moves: 0,           // 移动次数
+                startTime: null,    // 游戏开始时间
+                timer: null,        // 计时器
+                seconds: 0          // 已用秒数
+            };
+            
+            // DOM元素
+            const puzzleBoard = document.getElementById('puzzle-board');
+            const movesDisplay = document.getElementById('moves');
+            const timeDisplay = document.getElementById('time');
+            const shuffleBtn = document.getElementById('shuffle-btn');
+            const resetBtn = document.getElementById('reset-btn');
+            const winMessage = document.getElementById('win-message');
+            const finalMoves = document.getElementById('final-moves');
+            const finalTime = document.getElementById('final-time');
+            const playAgainBtn = document.getElementById('play-again-btn');
+            const shareLink = document.getElementById('share-link');
+            
+            // 初始化分享链接
+            shareLink.textContent = window.location.href;
+            
+            // 初始化拼图
+            function initializeBoard() {
+                // 创建完成状态的拼图
+                state.solvedBoard = [];
+                let num = 1;
+                for (let y = 0; y < 3; y++) {
+                    const row = [];
+                    for (let x = 0; x < 3; x++) {
+                        row.push(num);
+                        num++;
+                    }
+                    state.solvedBoard.push(row);
+                }
+                // 最后一块是空白
+                state.solvedBoard[2][2] = null;
+                
+                // 复制完成状态作为初始状态
+                state.board = JSON.parse(JSON.stringify(state.solvedBoard));
+                
+                // 重置游戏状态
+                state.moves = 0;
+                state.seconds = 0;
+                movesDisplay.textContent = '0';
+                timeDisplay.textContent = '00:00';
+                
+                // 停止计时器
+                if (state.timer) {
+                    clearInterval(state.timer);
+                    state.timer = null;
+                }
+                
+                // 隐藏胜利消息
+                winMessage.classList.add('hidden');
+                
+                // 渲染拼图
+                renderBoard();
+            }
+            
+            // 渲染拼图到页面
+            function renderBoard() {
+                puzzleBoard.innerHTML = '';
+                
+                for (let y = 0; y < 3; y++) {
+                    for (let x = 0; x < 3; x++) {
+                        const tileValue = state.board[y][x];
+                        const tile = document.createElement('div');
+                        tile.dataset.x = x;
+                        tile.dataset.y = y;
+                        tile.className = 'puzzle-tile rounded';
+                        
+                        // 设置不同数字的背景颜色
+                        if (tileValue) {
+                            const hue = (tileValue * 40) % 360;
+                            tile.style.backgroundColor = `hsl(${hue}, 70%, 60%)`;
+                            tile.style.color = 'white';
+                            tile.textContent = tileValue;
+                            
+                            // 添加点击事件
+                            tile.addEventListener('click', () => moveTile(x, y));
+                        } else {
+                            // 空白块
+                            tile.classList.add('tile-empty');
+                        }
+                        
+                        puzzleBoard.appendChild(tile);
+                    }
+                }
+            }
+            
+            // 移动拼图块
+            function moveTile(x, y) {
+                // 检查是否可以移动（与空白块相邻）
+                const isAdjacent = 
+                    (Math.abs(x - state.emptyTile.x) === 1 && y === state.emptyTile.y) ||
+                    (Math.abs(y - state.emptyTile.y) === 1 && x === state.emptyTile.x);
+                
+                if (!isAdjacent) return;
+                
+                // 如果是第一次移动，开始计时
+                if (!state.startTime) {
+                    startTimer();
+                }
+                
+                // 交换位置
+                state.board[state.emptyTile.y][state.emptyTile.x] = state.board[y][x];
+                state.board[y][x] = null;
+                
+                // 更新空白块位置
+                state.emptyTile.x = x;
+                state.emptyTile.y = y;
+                
+                // 更新移动次数
+                state.moves++;
+                movesDisplay.textContent = state.moves;
+                
+                // 重新渲染
+                renderBoard();
+                
+                // 检查是否完成
+                checkWin();
+            }
+            
+            // 打乱拼图
+            function shuffleBoard() {
+                // 重置游戏状态
+                initializeBoard();
+                
+                // 随机移动100次来打乱拼图
+                let moves = 0;
+                while (moves < 100) {
+                    // 可能的移动方向
+                    const directions = [];
+                    
+                    // 上
+                    if (state.emptyTile.y > 0) directions.push('up');
+                    // 下
+                    if (state.emptyTile.y < 2) directions.push('down');
+                    // 左
+                    if (state.emptyTile.x > 0) directions.push('left');
+                    // 右
+                    if (state.emptyTile.x < 2) directions.push('right');
+                    
+                    // 随机选择一个方向
+                    const direction = directions[Math.floor(Math.random() * directions.length)];
+                    
+                    // 根据方向移动
+                    switch (direction) {
+                        case 'up':
+                            moveTile(state.emptyTile.x, state.emptyTile.y - 1);
+                            break;
+                        case 'down':
+                            moveTile(state.emptyTile.x, state.emptyTile.y + 1);
+                            break;
+                        case 'left':
+                            moveTile(state.emptyTile.x - 1, state.emptyTile.y);
+                            break;
+                        case 'right':
+                            moveTile(state.emptyTile.x + 1, state.emptyTile.y);
+                            break;
+                    }
+                    
+                    moves++;
+                }
+                
+                // 重置移动次数（因为上面的移动是自动的）
+                state.moves = 0;
+                movesDisplay.textContent = '0';
+                
+                // 重置计时器
+                state.seconds = 0;
+                timeDisplay.textContent = '00:00';
+                
+                if (state.timer) {
+                    clearInterval(state.timer);
+                    state.timer = null;
+                }
+                state.startTime = null;
+                
+                // 重新渲染
+                renderBoard();
+            }
+            
+            // 开始计时器
+            function startTimer() {
+                state.startTime = new Date();
+                state.timer = setInterval(() => {
+                    state.seconds++;
+                    // 格式化时间为 MM:SS
+                    const minutes = Math.floor(state.seconds / 60).toString().padStart(2, '0');
+                    const seconds = (state.seconds % 60).toString().padStart(2, '0');
+                    timeDisplay.textContent = `${minutes}:${seconds}`;
+                }, 1000);
+            }
+            
+            // 检查是否完成
+            function checkWin() {
+                // 比较当前状态和完成状态
+                const isWin = JSON.stringify(state.board) === JSON.stringify(state.solvedBoard);
+                
+                if (isWin) {
+                    // 停止计时器
+                    clearInterval(state.timer);
+                    
+                    // 显示胜利消息
+                    finalMoves.textContent = state.moves;
+                    const minutes = Math.floor(state.seconds / 60).toString().padStart(2, '0');
+                    const seconds = (state.seconds % 60).toString().padStart(2, '0');
+                    finalTime.textContent = `${minutes}:${seconds}`;
+                    winMessage.classList.remove('hidden');
+                }
+            }
+            
+            // 事件监听
+            shuffleBtn.addEventListener('click', shuffleBoard);
+            resetBtn.addEventListener('click', initializeBoard);
+            playAgainBtn.addEventListener('click', shuffleBoard);
+            
+            // 初始化游戏
+            initializeBoard();
+        });
+    </script>
+</body>
+</html>
