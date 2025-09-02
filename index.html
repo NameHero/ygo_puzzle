@@ -62,6 +62,9 @@
             .image-option.selected {
                 @apply bg-primary text-white border-primary;
             }
+            .loading-state {
+                @apply flex items-center justify-center text-gray-500 gap-2 py-4;
+            }
         }
     </style>
 </head>
@@ -77,10 +80,15 @@
         <div class="bg-white rounded-lg p-4 shadow-md mb-6">
             <h2 class="text-xl font-bold text-primary mb-3">选择图片</h2>
             <div id="image-selector" class="image-selector">
-                <!-- 图片选项将通过JavaScript动态生成 -->
-                <div class="flex items-center justify-center text-gray-500">
+                <!-- 加载中状态 -->
+                <div class="loading-state">
                     <i class="fa fa-spinner fa-spin text-2xl"></i>
+                    <span>正在加载图片列表...</span>
                 </div>
+            </div>
+            <!-- 加载失败提示（默认隐藏） -->
+            <div id="load-error" class="hidden text-red-500 text-center py-2">
+                <i class="fa fa-exclamation-circle"></i> 图片列表加载失败，请检查文件
             </div>
         </div>
         
@@ -97,10 +105,10 @@
                 </div>
             </div>
             <div class="flex gap-3">
-                <button id="shuffle-btn" class="btn-primary flex items-center gap-2">
-                    <i class="fa fa-random"></i> 打乱
+                <button id="shuffle-btn" class="btn-primary flex items-center gap-2" disabled>
+                    <i class="fa fa-random"></i> 重新打乱
                 </button>
-                <button id="reset-btn" class="btn-secondary flex items-center gap-2">
+                <button id="reset-btn" class="btn-secondary flex items-center gap-2" disabled>
                     <i class="fa fa-refresh"></i> 重置
                 </button>
             </div>
@@ -108,7 +116,13 @@
         
         <!-- 游戏区域 -->
         <div class="game-container">
-            <div id="puzzle-board" class="puzzle-board"></div>
+            <div id="puzzle-board" class="puzzle-board">
+                <!-- 游戏加载中 -->
+                <div class="col-span-3 row-span-3 flex items-center justify-center text-gray-500">
+                    <i class="fa fa-spinner fa-spin text-3xl mr-3"></i>
+                    <span>等待图片加载...</span>
+                </div>
+            </div>
             
             <!-- 胜利提示 (默认隐藏) -->
             <div id="win-message" class="hidden absolute inset-0 bg-dark/80 rounded-lg flex flex-col items-center justify-center gap-6">
@@ -127,7 +141,7 @@
                 <li>首先从上方选择一张图片</li>
                 <li>点击空白格周围的拼图块来移动它们</li>
                 <li>将所有拼图块恢复到正确位置即可获胜</li>
-                <li>使用"打乱"按钮重新开始新的一局</li>
+                <li>使用"重新打乱"按钮重新开始新的一局</li>
                 <li>使用"重置"按钮恢复到初始打乱状态</li>
             </ul>
         </div>
@@ -141,141 +155,174 @@
     <script>
         // 拼图游戏主逻辑
         document.addEventListener('DOMContentLoaded', () => {
-            // 游戏配置 - 在这里添加你的图片文件名
-            // 请将所有图片放在images文件夹中
-            const IMAGE_FILES = [
-                "星耀龙10000.jpg",
-                "栗子球.jpg",
-                "青眼白龙.jpg",
-                "image4.jpg",
-                "image5.jpg"
-                // 可以继续添加更多图片
-            ];
-            
-            // 当前选中的图片索引
-            let selectedImageIndex = 0;
+            // 全局变量
+            let IMAGE_CONFIG = [];  // 从配置文件加载的图片配置列表
+            let selectedImageIndex = 0;  // 当前选中的图片索引
             
             // 游戏状态变量
             const state = {
-                board: [],          // 拼图当前状态 (存储的是每个位置应该显示的图片块索引)
+                board: [],          // 拼图当前状态 (存储图片块索引)
                 solvedBoard: [],    // 拼图完成状态
                 emptyTile: {x: 2, y: 2}, // 空白块位置
                 moves: 0,           // 移动次数
                 startTime: null,    // 游戏开始时间
                 timer: null,        // 计时器
                 seconds: 0,         // 已用秒数
-                imagePieces: []     // 存储切割后的图片块数据
+                imagePieces: []     // 切割后的图片块数据
             };
             
             // DOM元素
-            const puzzleBoard = document.getElementById('puzzle-board');
-            const movesDisplay = document.getElementById('moves');
-            const timeDisplay = document.getElementById('time');
-            const shuffleBtn = document.getElementById('shuffle-btn');
-            const resetBtn = document.getElementById('reset-btn');
-            const winMessage = document.getElementById('win-message');
-            const finalMoves = document.getElementById('final-moves');
-            const finalTime = document.getElementById('final-time');
-            const playAgainBtn = document.getElementById('play-again-btn');
-            const shareLink = document.getElementById('share-link');
-            const imageSelector = document.getElementById('image-selector');
+            const dom = {
+                puzzleBoard: document.getElementById('puzzle-board'),
+                movesDisplay: document.getElementById('moves'),
+                timeDisplay: document.getElementById('time'),
+                shuffleBtn: document.getElementById('shuffle-btn'),
+                resetBtn: document.getElementById('reset-btn'),
+                winMessage: document.getElementById('win-message'),
+                finalMoves: document.getElementById('final-moves'),
+                finalTime: document.getElementById('final-time'),
+                playAgainBtn: document.getElementById('play-again-btn'),
+                shareLink: document.getElementById('share-link'),
+                imageSelector: document.getElementById('image-selector'),
+                loadError: document.getElementById('load-error')
+            };
             
             // 初始化分享链接
-            shareLink.textContent = window.location.href;
+            dom.shareLink.textContent = window.location.href;
             
-            // 初始化图片选择器 - 只显示图片名称
+            // 第一步：加载图片配置文件（images.json）
+            loadImageConfig();
+            
+            // 加载图片配置文件
+            function loadImageConfig() {
+                // 从根目录加载images.json（和index.html同级）
+                fetch('images.json')
+                    .then(response => {
+                        if (!response.ok) throw new Error('配置文件不存在');
+                        return response.json();
+                    })
+                    .then(data => {
+                        // 从配置文件获取图片配置列表
+                        IMAGE_CONFIG = data.images || [];
+                        if (IMAGE_CONFIG.length === 0) throw new Error('图片列表为空');
+                        
+                        // 初始化图片选择器
+                        initializeImageSelector();
+                    })
+                    .catch(error => {
+                        console.error('加载配置失败:', error);
+                        // 显示错误提示，隐藏加载状态
+                        dom.imageSelector.innerHTML = '<div class="loading-state"><i class="fa fa-exclamation-circle text-red-500"></i><span>图片列表加载失败</span></div>';
+                        dom.loadError.classList.remove('hidden');
+                    });
+            }
+            
+            // 初始化图片选择器（从配置文件动态生成）
             function initializeImageSelector() {
-                imageSelector.innerHTML = '';
+                // 清空加载状态
+                dom.imageSelector.innerHTML = '';
                 
-                IMAGE_FILES.forEach((filename, index) => {
-                    // 提取文件名（不含扩展名）作为显示名称
-                    const displayName = filename.split('.').slice(0, -1).join('.') || filename;
-                    
+                // 动态生成图片选择按钮
+                IMAGE_CONFIG.forEach((image, index) => {
                     const option = document.createElement('div');
                     option.className = `image-option ${index === selectedImageIndex ? 'selected' : ''}`;
-                    option.textContent = displayName;
+                    option.textContent = image.name; // 显示自定义名称
                     
                     // 点击选择图片
                     option.addEventListener('click', () => {
-                        // 更新选中状态
-                        document.querySelectorAll('.image-option').forEach(el => {
-                            el.classList.remove('selected');
-                        });
+                        document.querySelectorAll('.image-option').forEach(el => el.classList.remove('selected'));
                         option.classList.add('selected');
                         selectedImageIndex = index;
-                        
-                        // 加载并切割新图片
-                        loadAndCropImage(filename);
+                        loadAndCropImage(image.file); // 加载选中的图片
                     });
                     
-                    imageSelector.appendChild(option);
+                    dom.imageSelector.appendChild(option);
                 });
                 
-                // 加载默认图片
-                if (IMAGE_FILES.length > 0) {
-                    loadAndCropImage(IMAGE_FILES[selectedImageIndex]);
+                // 加载默认图片（第一张）并默认打乱
+                if (IMAGE_CONFIG.length > 0) {
+                    loadAndCropImage(IMAGE_CONFIG[selectedImageIndex].file, true);
                 }
             }
             
-            // 加载图片并切割成9块
-            function loadAndCropImage(filename) {
+            // 加载图片并切割成9块，autoShuffle是否默认打乱
+            function loadAndCropImage(filename, autoShuffle = false) {
+                // 显示加载状态
+                dom.puzzleBoard.innerHTML = `
+                    <div class="col-span-3 row-span-3 flex items-center justify-center text-gray-500">
+                        <i class="fa fa-spinner fa-spin text-3xl mr-3"></i>
+                        <span>正在加载图片...</span>
+                    </div>
+                `;
+                // 禁用按钮
+                dom.shuffleBtn.disabled = true;
+                dom.resetBtn.disabled = true;
+                
                 const img = new Image();
+                // 图片路径：images文件夹下的文件（和配置文件一致）
                 img.src = `images/${filename}`;
                 
-                // 图片加载错误处理
+                // 图片加载错误处理（用默认图替代）
                 img.onerror = function() {
+                    console.warn(`图片${filename}加载失败，使用默认图`);
                     this.src = `https://picsum.photos/seed/${filename}/400/400`;
                 };
                 
+                // 图片加载完成后切割
                 img.onload = function() {
-                    // 创建canvas用于切割图片
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     
-                    // 确保图片是正方形，取最小边
+                    // 裁剪成正方形（取图片最短边）
                     const size = Math.min(img.width, img.height);
                     canvas.width = size;
                     canvas.height = size;
                     
-                    // 绘制图片（居中裁剪成正方形）
+                    // 居中绘制图片（避免非正方形图片变形）
                     const xOffset = (img.width - size) / 2;
                     const yOffset = (img.height - size) / 2;
                     ctx.drawImage(img, xOffset, yOffset, size, size, 0, 0, size, size);
                     
-                    // 切割成3x3的块
+                    // 切割成3x3块
                     const pieceSize = size / 3;
                     state.imagePieces = [];
                     
                     for (let y = 0; y < 3; y++) {
                         for (let x = 0; x < 3; x++) {
-                            // 创建一个新的canvas用于每个小块
                             const pieceCanvas = document.createElement('canvas');
                             pieceCanvas.width = pieceSize;
                             pieceCanvas.height = pieceSize;
                             const pieceCtx = pieceCanvas.getContext('2d');
                             
-                            // 从原始图片上裁剪对应的部分
+                            // 裁剪单个拼图块
                             pieceCtx.drawImage(
                                 canvas,
-                                x * pieceSize, y * pieceSize,  // 源图片上的位置
+                                x * pieceSize, y * pieceSize,  // 源图片位置
                                 pieceSize, pieceSize,          // 裁剪大小
-                                0, 0,                          // 目标canvas上的位置
+                                0, 0,                          // 目标位置
                                 pieceSize, pieceSize           // 目标大小
                             );
                             
-                            // 将裁剪的小块保存为dataURL
+                            // 保存为图片URL（供拼图块使用）
                             state.imagePieces.push(pieceCanvas.toDataURL());
                         }
                     }
                     
-                    // 初始化游戏板
+                    // 初始化游戏并启用按钮
                     initializeBoard();
+                    dom.shuffleBtn.disabled = false;
+                    dom.resetBtn.disabled = false;
+                    
+                    // 如果需要默认打乱，加载完成后自动打乱
+                    if (autoShuffle) {
+                        shuffleBoard();
+                    }
                 };
             }
             
-            // 初始化拼图
+            // 初始化拼图棋盘
             function initializeBoard() {
-                // 创建完成状态的拼图 (0-8的数字代表9个图片块，最后一个位置为null表示空白)
+                // 创建完成状态（0-8表示9个图片块，最后一个为空白）
                 state.solvedBoard = [];
                 let num = 0;
                 for (let y = 0; y < 3; y++) {
@@ -286,17 +333,16 @@
                     }
                     state.solvedBoard.push(row);
                 }
-                // 最后一块是空白
-                state.solvedBoard[2][2] = null;
+                state.solvedBoard[2][2] = null; // 最后一块设为空白
                 
                 // 复制完成状态作为初始状态
                 state.board = JSON.parse(JSON.stringify(state.solvedBoard));
                 
-                // 重置游戏状态
+                // 重置游戏数据
                 state.moves = 0;
                 state.seconds = 0;
-                movesDisplay.textContent = '0';
-                timeDisplay.textContent = '00:00';
+                dom.movesDisplay.textContent = '0';
+                dom.timeDisplay.textContent = '00:00';
                 
                 // 停止计时器
                 if (state.timer) {
@@ -304,8 +350,8 @@
                     state.timer = null;
                 }
                 
-                // 隐藏胜利消息
-                winMessage.classList.add('hidden');
+                // 隐藏胜利提示
+                dom.winMessage.classList.add('hidden');
                 
                 // 渲染拼图
                 renderBoard();
@@ -313,7 +359,7 @@
             
             // 渲染拼图到页面
             function renderBoard() {
-                puzzleBoard.innerHTML = '';
+                dom.puzzleBoard.innerHTML = '';
                 
                 for (let y = 0; y < 3; y++) {
                     for (let x = 0; x < 3; x++) {
@@ -323,37 +369,36 @@
                         tile.dataset.y = y;
                         tile.className = 'puzzle-tile rounded';
                         
-                        // 如果是有效图片块，设置背景图片
+                        // 非空白块：设置背景图片
                         if (tileValue !== null && state.imagePieces[tileValue]) {
                             tile.style.backgroundImage = `url(${state.imagePieces[tileValue]})`;
-                            
-                            // 添加点击事件
                             tile.addEventListener('click', () => moveTile(x, y));
-                        } else {
-                            // 空白块
+                        } 
+                        // 空白块：灰色背景
+                        else {
                             tile.classList.add('tile-empty');
                         }
                         
-                        puzzleBoard.appendChild(tile);
+                        dom.puzzleBoard.appendChild(tile);
                     }
                 }
             }
             
             // 移动拼图块
             function moveTile(x, y) {
-                // 检查是否可以移动（与空白块相邻）
+                // 检查是否能移动（必须和空白块相邻）
                 const isAdjacent = 
                     (Math.abs(x - state.emptyTile.x) === 1 && y === state.emptyTile.y) ||
                     (Math.abs(y - state.emptyTile.y) === 1 && x === state.emptyTile.x);
                 
                 if (!isAdjacent) return;
                 
-                // 如果是第一次移动，开始计时
+                // 第一次移动时开始计时
                 if (!state.startTime) {
                     startTimer();
                 }
                 
-                // 交换位置
+                // 交换当前块和空白块
                 state.board[state.emptyTile.y][state.emptyTile.x] = state.board[y][x];
                 state.board[y][x] = null;
                 
@@ -361,9 +406,9 @@
                 state.emptyTile.x = x;
                 state.emptyTile.y = y;
                 
-                // 更新移动次数
+                // 更新步数
                 state.moves++;
-                movesDisplay.textContent = state.moves;
+                dom.movesDisplay.textContent = state.moves;
                 
                 // 重新渲染
                 renderBoard();
@@ -374,21 +419,14 @@
             
             // 打乱拼图
             function shuffleBoard() {
-                // 保存当前图片状态
-                const currentImagePieces = [...state.imagePieces];
+                const currentImagePieces = [...state.imagePieces]; // 保存当前图片
+                initializeBoard(); // 重置棋盘
+                state.imagePieces = currentImagePieces; // 恢复当前图片
                 
-                // 重新初始化（保持当前图片）
-                initializeBoard();
-                
-                // 恢复图片
-                state.imagePieces = currentImagePieces;
-                
-                // 随机移动100次来打乱拼图
+                // 随机移动100次（确保打乱）
                 let moves = 0;
                 while (moves < 100) {
-                    // 可能的移动方向
                     const directions = [];
-                    
                     // 上
                     if (state.emptyTile.y > 0) directions.push('up');
                     // 下
@@ -398,43 +436,26 @@
                     // 右
                     if (state.emptyTile.x < 2) directions.push('right');
                     
-                    // 随机选择一个方向
+                    // 随机选一个方向移动
                     const direction = directions[Math.floor(Math.random() * directions.length)];
-                    
-                    // 根据方向移动
                     switch (direction) {
-                        case 'up':
-                            moveTile(state.emptyTile.x, state.emptyTile.y - 1);
-                            break;
-                        case 'down':
-                            moveTile(state.emptyTile.x, state.emptyTile.y + 1);
-                            break;
-                        case 'left':
-                            moveTile(state.emptyTile.x - 1, state.emptyTile.y);
-                            break;
-                        case 'right':
-                            moveTile(state.emptyTile.x + 1, state.emptyTile.y);
-                            break;
+                        case 'up': moveTile(state.emptyTile.x, state.emptyTile.y - 1); break;
+                        case 'down': moveTile(state.emptyTile.x, state.emptyTile.y + 1); break;
+                        case 'left': moveTile(state.emptyTile.x - 1, state.emptyTile.y); break;
+                        case 'right': moveTile(state.emptyTile.x + 1, state.emptyTile.y); break;
                     }
-                    
                     moves++;
                 }
                 
-                // 重置移动次数（因为上面的移动是自动的）
+                // 重置步数和计时器
                 state.moves = 0;
-                movesDisplay.textContent = '0';
-                
-                // 重置计时器
                 state.seconds = 0;
-                timeDisplay.textContent = '00:00';
-                
-                if (state.timer) {
-                    clearInterval(state.timer);
-                    state.timer = null;
-                }
+                dom.movesDisplay.textContent = '0';
+                dom.timeDisplay.textContent = '00:00';
+                if (state.timer) clearInterval(state.timer);
+                state.timer = null;
                 state.startTime = null;
                 
-                // 重新渲染
                 renderBoard();
             }
             
@@ -443,38 +464,31 @@
                 state.startTime = new Date();
                 state.timer = setInterval(() => {
                     state.seconds++;
-                    // 格式化时间为 MM:SS
+                    // 格式化为 00:00
                     const minutes = Math.floor(state.seconds / 60).toString().padStart(2, '0');
                     const seconds = (state.seconds % 60).toString().padStart(2, '0');
-                    timeDisplay.textContent = `${minutes}:${seconds}`;
+                    dom.timeDisplay.textContent = `${minutes}:${seconds}`;
                 }, 1000);
             }
             
-            // 检查是否完成
+            // 检查是否完成拼图
             function checkWin() {
-                // 比较当前状态和完成状态
                 const isWin = JSON.stringify(state.board) === JSON.stringify(state.solvedBoard);
-                
                 if (isWin) {
-                    // 停止计时器
-                    clearInterval(state.timer);
-                    
-                    // 显示胜利消息
-                    finalMoves.textContent = state.moves;
+                    clearInterval(state.timer); // 停止计时
+                    // 显示胜利信息
+                    dom.finalMoves.textContent = state.moves;
                     const minutes = Math.floor(state.seconds / 60).toString().padStart(2, '0');
                     const seconds = (state.seconds % 60).toString().padStart(2, '0');
-                    finalTime.textContent = `${minutes}:${seconds}`;
-                    winMessage.classList.remove('hidden');
+                    dom.finalTime.textContent = `${minutes}:${seconds}`;
+                    dom.winMessage.classList.remove('hidden');
                 }
             }
             
-            // 事件监听
-            shuffleBtn.addEventListener('click', shuffleBoard);
-            resetBtn.addEventListener('click', initializeBoard);
-            playAgainBtn.addEventListener('click', shuffleBoard);
-            
-            // 初始化图片选择器和游戏
-            initializeImageSelector();
+            // 绑定按钮事件
+            dom.shuffleBtn.addEventListener('click', shuffleBoard);
+            dom.resetBtn.addEventListener('click', initializeBoard);
+            dom.playAgainBtn.addEventListener('click', shuffleBoard);
         });
     </script>
 </body>
