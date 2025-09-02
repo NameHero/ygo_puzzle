@@ -52,6 +52,10 @@
                 @apply bg-secondary hover:bg-secondary/90 text-white font-bold py-2 px-4 rounded-lg 
                        transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-1;
             }
+            .btn-accent {
+                @apply bg-accent hover:bg-accent/90 text-white font-bold py-2 px-4 rounded-lg 
+                       transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-1;
+            }
             .image-selector {
                 @apply flex flex-wrap gap-2 my-4;
             }
@@ -65,6 +69,9 @@
             .loading-state {
                 @apply flex items-center justify-center text-gray-500 gap-2 py-4;
             }
+            .thumbnail-image {
+                @apply max-w-full h-auto rounded-lg border-2 border-gray-200;
+            }
         }
     </style>
 </head>
@@ -72,12 +79,12 @@
     <div class="container mx-auto px-4 py-8 max-w-4xl">
         <!-- 游戏标题 -->
         <header class="text-center mb-8">
-            <h1 class="text-[clamp(2rem,5vw,3rem)] font-bold text-primary mb-2">游戏王卡图拼图游戏</h1>
+            <h1 id="game-title" class="text-[clamp(2rem,5vw,3rem)] font-bold text-primary mb-2">游戏王卡图拼图游戏</h1>
             <p class="text-gray-600 text-lg">选择一张图片，将打乱的拼图块恢复原状！</p>
         </header>
         
         <!-- 图片选择区 -->
-        <div class="bg-white rounded-lg p-4 shadow-md mb-6">
+        <div id="image-selector-container" class="bg-white rounded-lg p-4 shadow-md mb-6">
             <h2 class="text-xl font-bold text-primary mb-3">选择图片</h2>
             <div id="image-selector" class="image-selector">
                 <!-- 加载中状态 -->
@@ -108,6 +115,9 @@
                 <button id="reset-btn" class="btn-secondary flex items-center gap-2" disabled>
                     <i class="fa fa-refresh"></i> 重置
                 </button>
+                <button id="exclusive-btn" class="btn-accent flex items-center gap-2" disabled>
+                    <i class="fa fa-star"></i> 进入专享页面
+                </button>
             </div>
         </div>
         
@@ -137,7 +147,7 @@
                 <li>首先从上方选择一张图片</li>
                 <li>点击空白格周围的拼图块来移动它们</li>
                 <li>将所有拼图块恢复到正确位置即可获胜</li>
-                <li>使用"重置"按钮恢复到初始打乱状态</li>
+                <li>使用"重置"按钮重新开始当前图片的拼图</li>
             </ul>
         </div>
         
@@ -159,6 +169,7 @@
             // 全局变量 - 图片文件夹为 "image"，配置文件为 "image.json"
             let IMAGE_CONFIG = [];  // 从配置文件加载的图片配置列表
             let selectedImageIndex = 0;  // 当前选中的图片索引
+            let isExclusiveMode = false; // 是否为专享页面模式
             
             // 游戏状态变量
             const state = {
@@ -179,20 +190,40 @@
                 movesDisplay: document.getElementById('moves'),
                 timeDisplay: document.getElementById('time'),
                 resetBtn: document.getElementById('reset-btn'),
+                exclusiveBtn: document.getElementById('exclusive-btn'),
                 winMessage: document.getElementById('win-message'),
                 finalMoves: document.getElementById('final-moves'),
                 finalTime: document.getElementById('final-time'),
                 shareLink: document.getElementById('share-link'),
                 imageSelector: document.getElementById('image-selector'),
+                imageSelectorContainer: document.getElementById('image-selector-container'),
                 loadError: document.getElementById('load-error'),
-                thumbnailImage: document.getElementById('thumbnail-image')
+                thumbnailImage: document.getElementById('thumbnail-image'),
+                gameTitle: document.getElementById('game-title')
             };
             
             // 初始化分享链接
             dom.shareLink.textContent = window.location.href;
             
+            // 检查是否为专享页面
+            checkExclusiveMode();
+            
             // 第一步：加载图片配置文件（image.json）
             loadImageConfig();
+            
+            // 检查是否从专享页面进入
+            function checkExclusiveMode() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const exclusiveImage = urlParams.get('exclusive');
+                
+                if (exclusiveImage) {
+                    isExclusiveMode = true;
+                    // 隐藏图片选择区
+                    dom.imageSelectorContainer.classList.add('hidden');
+                    // 禁用专享按钮
+                    dom.exclusiveBtn.disabled = true;
+                }
+            }
             
             // 加载图片配置文件
             function loadImageConfig() {
@@ -208,6 +239,28 @@
                         
                         // 初始化图片选择器
                         initializeImageSelector();
+                        
+                        // 如果是专享页面，加载对应的图片
+                        if (isExclusiveMode) {
+                            const urlParams = new URLSearchParams(window.location.search);
+                            const exclusiveImage = urlParams.get('exclusive');
+                            const imageConfig = IMAGE_CONFIG.find(img => img.name === exclusiveImage);
+                            
+                            if (imageConfig) {
+                                // 更新标题
+                                dom.gameTitle.textContent = `${exclusiveImage}拼图小游戏`;
+                                
+                                // 加载对应的图片
+                                const index = IMAGE_CONFIG.findIndex(img => img.name === exclusiveImage);
+                                if (index !== -1) {
+                                    selectedImageIndex = index;
+                                    loadAndCropImage(IMAGE_CONFIG[selectedImageIndex].file);
+                                }
+                            } else {
+                                // 如果专享图片不存在，加载第一张图片
+                                loadAndCropImage(IMAGE_CONFIG[0].file);
+                            }
+                        }
                     })
                     .catch(error => {
                         console.error('加载配置失败:', error);
@@ -233,21 +286,21 @@
                         document.querySelectorAll('.image-option').forEach(el => el.classList.remove('selected'));
                         option.classList.add('selected');
                         selectedImageIndex = index;
-                        // 切换图片时重置状态并打乱
-                        loadAndCropImage(image.file, true);
+                        // 切换图片时重置状态
+                        loadAndCropImage(image.file);
                     });
                     
                     dom.imageSelector.appendChild(option);
                 });
                 
-                // 加载默认图片（第一张）并默认打乱
-                if (IMAGE_CONFIG.length > 0) {
-                    loadAndCropImage(IMAGE_CONFIG[selectedImageIndex].file, true);
+                // 非专享模式下，加载默认图片（第一张）
+                if (!isExclusiveMode && IMAGE_CONFIG.length > 0) {
+                    loadAndCropImage(IMAGE_CONFIG[selectedImageIndex].file);
                 }
             }
             
             // 加载图片并切割成9块
-            function loadAndCropImage(filename, autoShuffle = false) {
+            function loadAndCropImage(filename) {
                 // 显示加载状态
                 dom.puzzleBoard.innerHTML = `
                     <div class="col-span-3 row-span-3 flex items-center justify-center text-gray-500">
@@ -257,6 +310,7 @@
                 `;
                 // 禁用按钮
                 dom.resetBtn.disabled = true;
+                dom.exclusiveBtn.disabled = true;
                 
                 // 更新当前图片路径（支持PNG和含-的文件名）
                 state.currentImage = `image/${filename}`;
@@ -320,10 +374,8 @@
                     // 初始化游戏并启用按钮
                     initializeBoard();
                     dom.resetBtn.disabled = false;
-                    
-                    // 如果需要默认打乱，加载完成后自动打乱
-                    if (autoShuffle) {
-                        shuffleBoard();
+                    if (!isExclusiveMode) {
+                        dom.exclusiveBtn.disabled = false;
                     }
                 };
             }
@@ -346,7 +398,7 @@
                 dom.winMessage.classList.add('hidden');
             }
             
-            // 初始化拼图棋盘
+            // 初始化拼图棋盘 - 确保9个块完整
             function initializeBoard() {
                 // 创建完成状态（0-8表示9个图片块，最后一个为空白）
                 state.solvedBoard = [];
@@ -364,8 +416,61 @@
                 // 复制完成状态作为初始状态
                 state.board = JSON.parse(JSON.stringify(state.solvedBoard));
                 
+                // 确保空白块位置正确
+                state.emptyTile = {x: 2, y: 2};
+                
+                // 打乱拼图（使用固定的打乱模式，确保始终有8个可见块）
+                applyInitialShuffle();
+                
                 // 渲染拼图
                 renderBoard();
+            }
+            
+            // 应用初始打乱（固定模式，确保有效性）
+            function applyInitialShuffle() {
+                // 使用预设的有效打乱模式，避免随机打乱可能出现的问题
+                // 这是一个已知有效的打乱序列
+                const moves = [
+                    {x: 1, y: 2},  // 向右移动(1,2)到(2,2)
+                    {x: 2, y: 1},  // 向下移动(2,1)到(2,2)
+                    {x: 1, y: 1},  // 向右移动(1,1)到(2,1)
+                    {x: 0, y: 1},  // 向右移动(0,1)到(1,1)
+                    {x: 0, y: 2},  // 向上移动(0,2)到(0,1)
+                    {x: 1, y: 2},  // 向左移动(1,2)到(0,2)
+                    {x: 2, y: 2},  // 向左移动(2,2)到(1,2)
+                    {x: 2, y: 1},  // 向下移动(2,1)到(2,2)
+                    {x: 2, y: 0},  // 向下移动(2,0)到(2,1)
+                    {x: 1, y: 0},  // 向右移动(1,0)到(2,0)
+                    {x: 0, y: 0},  // 向右移动(0,0)到(1,0)
+                    {x: 0, y: 1},  // 向上移动(0,1)到(0,0)
+                    {x: 0, y: 2},  // 向上移动(0,2)到(0,1)
+                    {x: 1, y: 2},  // 向左移动(1,2)到(0,2)
+                    {x: 1, y: 1},  // 向下移动(1,1)到(1,2)
+                    {x: 1, y: 0},  // 向下移动(1,0)到(1,1)
+                    {x: 2, y: 0},  // 向左移动(2,0)到(1,0)
+                    {x: 2, y: 1},  // 向上移动(2,1)到(2,0)
+                    {x: 2, y: 2},  // 向上移动(2,2)到(2,1)
+                    {x: 1, y: 2}   // 向右移动(1,2)到(2,2)
+                ];
+                
+                // 执行打乱步骤
+                moves.forEach(move => {
+                    const {x, y} = move;
+                    // 检查是否能移动（必须和空白块相邻）
+                    const isAdjacent = 
+                        (Math.abs(x - state.emptyTile.x) === 1 && y === state.emptyTile.y) ||
+                        (Math.abs(y - state.emptyTile.y) === 1 && x === state.emptyTile.x);
+                    
+                    if (isAdjacent) {
+                        // 交换当前块和空白块
+                        state.board[state.emptyTile.y][state.emptyTile.x] = state.board[y][x];
+                        state.board[y][x] = null;
+                        
+                        // 更新空白块位置
+                        state.emptyTile.x = x;
+                        state.emptyTile.y = y;
+                    }
+                });
             }
             
             // 渲染拼图到页面
@@ -428,85 +533,6 @@
                 checkWin();
             }
             
-            // 打乱拼图
-            function shuffleBoard() {
-                // 保存当前图片
-                const currentImagePieces = [...state.imagePieces];
-                
-                // 重置棋盘到初始状态
-                initializeBoard();
-                
-                // 恢复当前图片
-                state.imagePieces = currentImagePieces;
-                
-                // 确保打乱算法正确执行，避免出现不完整的情况
-                let validMoves = 0;
-                const maxAttempts = 1000; // 防止无限循环的安全机制
-                let attempts = 0;
-                
-                // 随机移动100次（确保打乱且有效）
-                while (validMoves < 100 && attempts < maxAttempts) {
-                    attempts++;
-                    const directions = [];
-                    
-                    // 上
-                    if (state.emptyTile.y > 0) directions.push('up');
-                    // 下
-                    if (state.emptyTile.y < 2) directions.push('down');
-                    // 左
-                    if (state.emptyTile.x > 0) directions.push('left');
-                    // 右
-                    if (state.emptyTile.x < 2) directions.push('right');
-                    
-                    // 随机选一个方向移动
-                    if (directions.length > 0) {
-                        const direction = directions[Math.floor(Math.random() * directions.length)];
-                        let moved = false;
-                        
-                        switch (direction) {
-                            case 'up':
-                                if (state.emptyTile.y > 0) {
-                                    moveTile(state.emptyTile.x, state.emptyTile.y - 1);
-                                    moved = true;
-                                }
-                                break;
-                            case 'down':
-                                if (state.emptyTile.y < 2) {
-                                    moveTile(state.emptyTile.x, state.emptyTile.y + 1);
-                                    moved = true;
-                                }
-                                break;
-                            case 'left':
-                                if (state.emptyTile.x > 0) {
-                                    moveTile(state.emptyTile.x - 1, state.emptyTile.y);
-                                    moved = true;
-                                }
-                                break;
-                            case 'right':
-                                if (state.emptyTile.x < 2) {
-                                    moveTile(state.emptyTile.x + 1, state.emptyTile.y);
-                                    moved = true;
-                                }
-                                break;
-                        }
-                        
-                        if (moved) validMoves++;
-                    }
-                }
-                
-                // 重置步数和计时器（不影响已完成的随机移动计数）
-                state.moves = 0;
-                state.seconds = 0;
-                dom.movesDisplay.textContent = '0';
-                dom.timeDisplay.textContent = '00:00';
-                
-                if (state.timer) clearInterval(state.timer);
-                state.timer = null;
-                state.startTime = null;
-                
-                renderBoard();
-            }
-            
             // 开始计时器
             function startTimer() {
                 state.startTime = new Date();
@@ -537,7 +563,13 @@
             dom.resetBtn.addEventListener('click', () => {
                 resetGameState();
                 initializeBoard();
-                shuffleBoard();
+            });
+            
+            // 专享页面按钮事件
+            dom.exclusiveBtn.addEventListener('click', () => {
+                const currentImageName = IMAGE_CONFIG[selectedImageIndex].name;
+                // 跳转到专享页面
+                window.location.href = `${window.location.origin}${window.location.pathname}?exclusive=${encodeURIComponent(currentImageName)}`;
             });
         });
     </script>
